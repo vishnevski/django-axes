@@ -56,8 +56,9 @@ def get_lockout_url():
     return getattr(settings, 'AXES_LOCKOUT_URL', None)
 
 def get_setting(name):
+    import settings
     try:
         from constance import config
     except ImportError:
-        return getattr(locals(), name, None)
-    return getattr(config, AXES_SETTINGS_NAMES.get(name, name), getattr(locals(), name, None))
+        return getattr(settings, name, None)
+    return getattr(config, AXES_SETTINGS_NAMES.get(name, name), getattr(settings, name, None))
