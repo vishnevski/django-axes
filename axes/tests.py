@@ -5,7 +5,7 @@ import random
 from django.contrib.auth.models import User
 
 from models import AccessAttempt
-from decorators import FAILURE_LIMIT
+from settings import get_setting as gs
 
 # Only run tests if they have axes in middleware
 
@@ -43,7 +43,7 @@ class AccessAttemptTest(TestCase):
         return response
 
     def test_login_max(self, correct_username=False):
-        for i in range(0, FAILURE_LIMIT - 1):
+        for i in range(0, gs('FAILURE_LIMIT') - 1):
             response = self._attempt_login(correct_username=correct_username)
             self.assertContains(response, "this_is_the_login_form")
         # So, we shouldn't have gotten a lock-out yet.
@@ -52,7 +52,7 @@ class AccessAttemptTest(TestCase):
         self.assertContains(response, "Account locked")
 
     def test_login_max_with_more(self, correct_username=False):
-        for i in range(0, FAILURE_LIMIT - 1):
+        for i in range(0, gs('FAILURE_LIMIT') - 1):
             response = self._attempt_login(correct_username=correct_username)
             self.assertContains(response, "this_is_the_login_form")
         # So, we shouldn't have gotten a lock-out yet.

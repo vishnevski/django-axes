@@ -3,10 +3,8 @@ try:
 except ImportError:
     from django.utils.functional import wraps  # Python 2.4 fallback.
 
-from datetime import timedelta
 import logging
 
-from django.conf import settings
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.models import User
 from django import http
@@ -25,57 +23,22 @@ except ImportError:
 
 from axes.models import AccessAttempt, AccessLog
 from axes.signals import user_locked_out
+from axes.settings import ERROR_MESSAGE, LOGIN_FORM_KEY, get_lockout_url,\
+    get_setting as gs
 import axes
-
-# see if the user has overridden the failure limit
-FAILURE_LIMIT = getattr(settings, 'AXES_LOGIN_FAILURE_LIMIT', 3)
-
-# see if the user has set axes to lock out logins after failure limit
-LOCK_OUT_AT_FAILURE = getattr(settings, 'AXES_LOCK_OUT_AT_FAILURE', True)
-
-USE_USER_AGENT = getattr(settings, 'AXES_USE_USER_AGENT', False)
-
-#see if the django app is sitting behind a reverse proxy 
-BEHIND_REVERSE_PROXY = getattr(settings, 'AXES_BEHIND_REVERSE_PROXY', False)
-#if the django app is behind a reverse proxy, look for the ip address using this HTTP header value
-REVERSE_PROXY_HEADER = getattr(settings, 'AXES_REVERSE_PROXY_HEADER', 'HTTP_X_FORWARDED_FOR')
-
-
-COOLOFF_TIME = getattr(settings, 'AXES_COOLOFF_TIME', None)
-if isinstance(COOLOFF_TIME, int):
-    COOLOFF_TIME = timedelta(hours=COOLOFF_TIME)
-
-LOGGER = getattr(settings, 'AXES_LOGGER', 'axes.watch_login')
-
-LOCKOUT_TEMPLATE = getattr(settings, 'AXES_LOCKOUT_TEMPLATE', None)
-VERBOSE = getattr(settings, 'AXES_VERBOSE', True)
-
-# whitelist and blacklist
-# todo: convert the strings to IPv4 on startup to avoid type conversion during processing
-ONLY_WHITELIST = getattr(settings, 'AXES_ONLY_ALLOW_WHITELIST', False)
-IP_WHITELIST = getattr(settings, 'AXES_IP_WHITELIST', None)
-IP_BLACKLIST = getattr(settings, 'AXES_IP_BLACKLIST', None)
-
-ERROR_MESSAGE = ugettext_lazy("Please enter a correct username and password. "
-                              "Note that both fields are case-sensitive.")
-LOGIN_FORM_KEY = 'this_is_the_login_form'
 
 
 def get_ip(request):
-    if not BEHIND_REVERSE_PROXY:
+    if not gs('BEHIND_REVERSE_PROXY'):
         ip = request.META.get('REMOTE_ADDR', '')
     else:
-        logging.debug('Axes is configured to be behind reverse proxy...looking for header value %s', REVERSE_PROXY_HEADER)
-        ip = request.META.get(REVERSE_PROXY_HEADER, '')
+        logging.debug('Axes is configured to be behind reverse proxy...looking for header value %s', gs('REVERSE_PROXY_HEADER'))
+        ip = request.META.get(gs('REVERSE_PROXY_HEADER'), '')
         if ip == '':
             raise Warning('Axes is configured for operation behind a reverse proxy but could not find '\
                           'an HTTP header value {0}. Check your proxy server settings '\
-                          'to make sure this header value is being passed.'.format(REVERSE_PROXY_HEADER))
+                          'to make sure this header value is being passed.'.format(gs('REVERSE_PROXY_HEADER')))
     return ip
-
-def get_lockout_url():
-    return getattr(settings, 'AXES_LOCKOUT_URL', None)
-
 
 def query2str(items):
     """Turns a dictionary into an easy-to-read list of key-value pairs.
@@ -92,21 +55,21 @@ def query2str(items):
 
 
 def ip_in_whitelist(ip):
-    if IP_WHITELIST is not None:
-        return ip in IP_WHITELIST
+    if gs('IP_WHITELIST') is not None:
+        return ip in gs('IP_WHITELIST')
     else:
         return False
 
 
 def ip_in_blacklist(ip):
-    if IP_BLACKLIST is not None:
-        return ip in IP_BLACKLIST
+    if gs('IP_BLACKLIST') is not None:
+        return ip in gs('IP_BLACKLIST')
     else:
         return False
 
 
-log = logging.getLogger(LOGGER)
-if VERBOSE:
+log = logging.getLogger(gs('LOGGER'))
+if gs('VERBOSE'):
     log.info('AXES: BEGIN LOG')
     log.info('Using django-axes ' + axes.get_version())
 
@@ -142,7 +105,7 @@ def get_user_attempts(request):
         
     username = request.POST.get('username', None)
 
-    if USE_USER_AGENT:
+    if gs('USE_USER_AGENT'):
         ua = request.META.get('HTTP_USER_AGENT', '<unknown>')
         attempts = AccessAttempt.objects.filter(
             user_agent=ua, ip_address=ip, username=username, trusted=True
@@ -154,7 +117,7 @@ def get_user_attempts(request):
 
     if len(attempts) == 0:
         params = {'ip_address': ip, 'trusted': False}
-        if USE_USER_AGENT:
+        if gs('USE_USER_AGENT'):
             params['user_agent'] = ua
 
         attempts = AccessAttempt.objects.filter(**params)
@@ -163,9 +126,9 @@ def get_user_attempts(request):
             params['username'] = username
             attempts |= AccessAttempt.objects.filter(**params)
 
-    if COOLOFF_TIME:
+    if gs('COOLOFF_TIME'):
         for attempt in attempts:
-            if attempt.attempt_time + COOLOFF_TIME < datetime.now() \
+            if attempt.attempt_time + gs('COOLOFF_TIME') < datetime.now() \
                and attempt.trusted is False:
                 attempt.delete()
 
@@ -179,7 +142,7 @@ def watch_login(func):
 
     def decorated_login(request, *args, **kwargs):
         # share some useful information
-        if func.__name__ != 'decorated_login' and VERBOSE:
+        if func.__name__ != 'decorated_login' and gs('VERBOSE'):
             log.info('AXES: Calling decorated function: %s' % func.__name__)
             if args:
                 log.info('args: %s' % args)
@@ -229,19 +192,19 @@ def watch_login(func):
 
 
 def lockout_response(request):
-    if LOCKOUT_TEMPLATE:
+    if gs('LOCKOUT_TEMPLATE'):
         context = {
-            'cooloff_time': COOLOFF_TIME,
-            'failure_limit': FAILURE_LIMIT,
+            'cooloff_time': gs('COOLOFF_TIME'),
+            'failure_limit': gs('FAILURE_LIMIT'),
         }
-        return render_to_response(LOCKOUT_TEMPLATE, context,
+        return render_to_response(gs('LOCKOUT_TEMPLATE'), context,
                                   context_instance=RequestContext(request))
 
     LOCKOUT_URL = get_lockout_url()
     if LOCKOUT_URL:
         return HttpResponseRedirect(LOCKOUT_URL)
 
-    if COOLOFF_TIME:
+    if gs('COOLOFF_TIME'):
         return HttpResponse("Account locked: too many login attempts.  "
                             "Please try again later.")
     else:
@@ -252,7 +215,7 @@ def lockout_response(request):
 def is_already_locked(request):
     ip = get_ip(request)
 
-    if ONLY_WHITELIST:
+    if gs('ONLY_WHITELIST'):
         if not ip_in_whitelist(ip):
             return True
 
@@ -262,7 +225,7 @@ def is_already_locked(request):
     attempts = get_user_attempts(request)
     user_lockable = is_user_lockable(request)
     for attempt in attempts:
-        if attempt.failures_since_start >= FAILURE_LIMIT and LOCK_OUT_AT_FAILURE and user_lockable:
+        if attempt.failures_since_start >= gs('FAILURE_LIMIT') and gs('LOCK_OUT_AT_FAILURE') and user_lockable:
             return True
 
     return False
@@ -333,7 +296,7 @@ def check_request(request, login_unsuccessful):
     user_lockable = is_user_lockable(request)
     # no matter what, we want to lock them out if they're past the number of
     # attempts allowed, unless the user is set to notlockable
-    if failures >= FAILURE_LIMIT and LOCK_OUT_AT_FAILURE and user_lockable:
+    if failures >= gs('FAILURE_LIMIT') and gs('LOCK_OUT_AT_FAILURE') and user_lockable:
         # We log them out in case they actually managed to enter the correct
         # password
         logout(request)
