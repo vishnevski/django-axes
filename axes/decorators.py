@@ -4,6 +4,7 @@ except ImportError:
     from django.utils.functional import wraps  # Python 2.4 fallback.
 
 import logging
+from datetime import timedelta
 
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.models import User
@@ -126,12 +127,16 @@ def get_user_attempts(request):
             params['username'] = username
             attempts |= AccessAttempt.objects.filter(**params)
 
+    attempts = list(attempts)
     if gs('COOLOFF_TIME'):
         for attempt in attempts:
-            if attempt.attempt_time + gs('COOLOFF_TIME') < datetime.now() \
-               and attempt.trusted is False:
+            COOLOFF_TIME = gs('COOLOFF_TIME')
+            if isinstance(COOLOFF_TIME, int) or isinstance(COOLOFF_TIME, float):
+                COOLOFF_TIME = timedelta(hours=COOLOFF_TIME)
+            if attempt.attempt_time + COOLOFF_TIME < datetime.now()\
+            and attempt.trusted is False:
                 attempt.delete()
-
+                attempts.pop(attempts.index(attempt))
     return attempts
 
 

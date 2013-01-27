@@ -1,6 +1,4 @@
 # -*- coding: utf-8 -*-
-from datetime import timedelta
-
 from django.conf import settings
 from django.utils.translation import ugettext_lazy as _
 
@@ -34,8 +32,6 @@ REVERSE_PROXY_HEADER = getattr(settings, 'AXES_REVERSE_PROXY_HEADER', 'HTTP_X_FO
 
 
 COOLOFF_TIME = getattr(settings, 'AXES_COOLOFF_TIME', None)
-if isinstance(COOLOFF_TIME, int):
-    COOLOFF_TIME = timedelta(hours=COOLOFF_TIME)
 
 LOGGER = getattr(settings, 'AXES_LOGGER', 'axes.watch_login')
 
